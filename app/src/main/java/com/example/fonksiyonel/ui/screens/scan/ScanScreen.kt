@@ -25,6 +25,7 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.fonksiyonel.R
 import com.example.fonksiyonel.model.CancerType
 import com.example.fonksiyonel.model.DiagnosisResult
+import com.example.fonksiyonel.model.ModelOutput
 import com.example.fonksiyonel.model.RiskLevel
 import com.example.fonksiyonel.model.SkinCancerClassifier
 import java.util.*
@@ -43,6 +44,7 @@ fun ScanScreen(
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     var isAnalyzing by remember { mutableStateOf(false) }
     var analysisResult by remember { mutableStateOf<DiagnosisResult?>(null) }
+    var modelOutput by remember { mutableStateOf<ModelOutput?>(null) }
     val coroutineScope = rememberCoroutineScope()
     
     // Initialize the skin cancer classifier
@@ -72,6 +74,12 @@ fun ScanScreen(
             coroutineScope.launch {
                 try {
                     // Use withContext to perform the model inference on IO dispatcher
+                    val rawOutput = withContext(Dispatchers.IO) {
+                        skinCancerClassifier.getModelRawOutput(uri)
+                    }
+                    modelOutput = rawOutput
+                    
+                    // Eski diagnosis sonucunu da hesaplayalım ama göstermeyelim
                     val result = withContext(Dispatchers.IO) {
                         skinCancerClassifier.classifyImage(uri)
                     }
@@ -166,108 +174,97 @@ fun ScanScreen(
                             ) {
                                 Text(
                                     text = "Analiz Sonucu",
-                                    fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(bottom = 16.dp)
                                 )
                                 
-                                // Result Icon
-                                Box(
-                                    modifier = Modifier
-                                        .size(80.dp)
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(
-                                            when (analysisResult?.riskLevel) {
-                                                RiskLevel.LOW -> MaterialTheme.colorScheme.tertiary
-                                                RiskLevel.MEDIUM -> Color(0xFFFFA000)
-                                                RiskLevel.HIGH -> Color(0xFFF57C00)
-                                                RiskLevel.VERY_HIGH -> MaterialTheme.colorScheme.error
-                                                else -> MaterialTheme.colorScheme.primary
-                                            }
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = when (analysisResult?.cancerType) {
-                                                CancerType.BENIGN -> R.drawable.ic_check_circle
-                                                else -> R.drawable.ic_warning
-                                            }
-                                        ),
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(48.dp)
+                                if (isAnalyzing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .align(Alignment.CenterHorizontally)
+                                            .padding(top = 8.dp, bottom = 8.dp)
                                     )
-                                }
-                                
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
-                                // Cancer Type
-                                Text(
-                                    text = when (analysisResult?.cancerType) {
-                                        CancerType.BENIGN -> "İyi Huylu (Benign)"
-                                        CancerType.MELANOMA -> "Melanoma"
-                                        CancerType.BASAL_CELL_CARCINOMA -> "Bazal Hücreli Karsinom"
-                                        CancerType.SQUAMOUS_CELL_CARCINOMA -> "Skuamöz Hücreli Karsinom"
-                                        else -> "Bilinmiyor"
-                                    },
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center
-                                )
-                                
-                                Spacer(modifier = Modifier.height(8.dp))
-                                
-                                // Confidence
-                                Text(
-                                    text = "Güven Oranı: ${(analysisResult?.confidencePercentage?.times(100))?.toInt()}%",
-                                    fontSize = 16.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                                
-                                Spacer(modifier = Modifier.height(8.dp))
-                                
-                                // Risk Level
-                                Box(
-                                    modifier = Modifier
-                                        .padding(vertical = 8.dp)
-                                        .clip(RoundedCornerShape(24.dp))
-                                        .background(
-                                            when (analysisResult?.riskLevel) {
-                                                RiskLevel.LOW -> MaterialTheme.colorScheme.tertiary
-                                                RiskLevel.MEDIUM -> Color(0xFFFFA000)
-                                                RiskLevel.HIGH -> Color(0xFFF57C00)
-                                                RiskLevel.VERY_HIGH -> MaterialTheme.colorScheme.error
-                                                else -> MaterialTheme.colorScheme.primary
-                                            }
-                                        )
-                                        .padding(horizontal = 24.dp, vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
                                     Text(
-                                        text = when (analysisResult?.riskLevel) {
-                                            RiskLevel.LOW -> "Düşük Risk"
-                                            RiskLevel.MEDIUM -> "Orta Risk"
-                                            RiskLevel.HIGH -> "Yüksek Risk"
-                                            RiskLevel.VERY_HIGH -> "Çok Yüksek Risk"
-                                            else -> "Bilinmiyor"
-                                        },
-                                        color = Color.White,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
+                                        text = "Analiz ediliyor...",
+                                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                                        fontSize = 16.sp
                                     )
-                                }
-                                
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-                                
-                                // Warning
-                                Text(
-                                    text = "Bu sonuç sadece ön teşhistir. Mutlaka doktorunuza danışın.",
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontSize = 14.sp,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
+                                } else if (modelOutput != null) {
+                                    // Show raw model outputs
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 16.dp)
+                                    ) {
+                                        Text(
+                                            text = "Ham Değerler:",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        
+                                        // Display raw values
+                                        modelOutput?.rawOutputs?.forEachIndexed { index, value ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(bottom = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "${modelOutput?.classLabels?.get(index) ?: "Sınıf $index"}: ",
+                                                    fontWeight = FontWeight.Medium,
+                                                    fontSize = 14.sp
+                                                )
+                                                Text(
+                                                    text = "$value",
+                                                    fontSize = 14.sp
+                                                )
+                                            }
+                                        }
+                                        
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                        
+                                        Text(
+                                            text = "Yüzdelik Değerler:",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
+                                        )
+                                        
+                                        // Display percentage values
+                                        modelOutput?.percentages?.forEachIndexed { index, value ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(bottom = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "${modelOutput?.classLabels?.get(index) ?: "Sınıf $index"}: ",
+                                                    fontWeight = FontWeight.Medium,
+                                                    fontSize = 14.sp
+                                                )
+                                                Text(
+                                                    text = "${(value * 100).toInt()}%",
+                                                    fontSize = 14.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                    
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                    
+                                    Text(
+                                        text = "Bu sonuçlar modelin ham çıktısını göstermektedir ve sınıflandırma yapılmamıştır.",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 14.sp,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                } 
                             }
                         }
                         
