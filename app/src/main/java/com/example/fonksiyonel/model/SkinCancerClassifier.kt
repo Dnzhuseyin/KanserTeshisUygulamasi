@@ -14,6 +14,36 @@ import android.graphics.ImageDecoder
 import android.os.Build
 import android.provider.MediaStore
 import java.io.IOException
+import kotlin.math.roundToInt
+
+/**
+ * Modelin ham çıktısını içeren sınıf
+ */
+data class ModelOutput(
+    val rawOutputs: FloatArray,
+    val percentages: List<Float>,
+    val classLabels: List<String> = listOf("Benign", "Melanoma", "Basal Cell Carcinoma", "Squamous Cell Carcinoma")
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as ModelOutput
+
+        if (!rawOutputs.contentEquals(other.rawOutputs)) return false
+        if (percentages != other.percentages) return false
+        if (classLabels != other.classLabels) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = rawOutputs.contentHashCode()
+        result = 31 * result + percentages.hashCode()
+        result = 31 * result + classLabels.hashCode()
+        return result
+    }
+}
 
 class SkinCancerClassifier(private val context: Context) {
     private var interpreter: Interpreter? = null
@@ -43,7 +73,10 @@ class SkinCancerClassifier(private val context: Context) {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
 
-    fun classifyImage(uri: Uri): DiagnosisResult {
+    /**
+     * Modelin ham çıktısını döndüren fonksiyon
+     */
+    fun getModelRawOutput(uri: Uri): ModelOutput {
         // Load and preprocess the image
         val bitmap = loadAndResizeBitmap(uri, inputSize, inputSize)
         
@@ -73,8 +106,24 @@ class SkinCancerClassifier(private val context: Context) {
         // Run inference
         interpreter?.run(inputBuffer, outputBuffer)
         
-        // Process results
-        val result = outputBuffer[0]
+        // Get raw model output
+        val rawOutput = outputBuffer[0]
+        
+        // Yüzdelik değerlere dönüştür (opsiyonel)
+        val percentages = rawOutput.map { (it * 100).roundToInt() / 100f }
+        
+        return ModelOutput(
+            rawOutputs = rawOutput,
+            percentages = percentages.toList()
+        )
+    }
+    
+    /**
+     * Modelin çıktısını DiagnosisResult olarak da döndürebilmek için eski metodu tutuyoruz
+     */
+    fun classifyImage(uri: Uri): DiagnosisResult {
+        val modelOutput = getModelRawOutput(uri)
+        val result = modelOutput.rawOutputs
         
         // Find the class with highest probability
         var maxIndex = 0
